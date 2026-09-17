@@ -1,0 +1,27 @@
+[project]
+name = "profsupport"
+version = "0.1.0"
+description = ""
+readme = "README.md"
+requires-python = ">=3.10"
+authors = [
+    { name = "Flet developer", email = "you@example.com" }
+]
+dependencies = [
+    "flet>=0.28.3"
+]
+
+[dependency-groups]
+dev = [
+    "flet-cli>=0.28.3",
+]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+
+[tool.flet]
+org = "com.zitouni"
+product = "ProfSupport"
+company = "ZT AZ"
+copyright = "Copyright (C) 2023-2026 by Flet"
