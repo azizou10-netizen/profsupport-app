@@ -1,17 +1,41 @@
 name: Build APK
-on: workflow_dispatch
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
 
 jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python 3.12
+        uses: actions/setup-python@v5
         with:
           python-version: '3.12'
-      - run: pip install flet
-      - run: flet build apk --yes
-      - uses: actions/upload-artifact@v4
+          cache: pip
+
+      - name: Install exact project dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt
+          python -m pip install "flet-cli==0.28.3"
+
+      - name: Verify Flet version
+        run: |
+          python -c "import flet; print('Flet:', getattr(flet, '__version__', 'unknown'))"
+          flet --version
+
+      - name: Build Android APK
+        run: flet build apk --yes
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
         with:
-          name: app-apk
+          name: profsupport-apk
           path: build/apk/*.apk
+          if-no-files-found: error
