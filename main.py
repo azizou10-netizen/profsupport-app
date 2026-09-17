@@ -3,6 +3,7 @@ import sqlite3
 import json
 import os
 import shutil
+import inspect
 from pathlib import Path
 from datetime import datetime, date, timedelta
 
@@ -309,7 +310,10 @@ def main(page: ft.Page):
     # ولاستيراد نسخة سابقة، لأن المجلد الداخلي للتطبيق على أندرويد غير قابل
     # للوصول من مدير الملفات العادي.
     backup_file_picker = ft.FilePicker()
-    page.overlay.append(backup_file_picker)
+    if hasattr(page, "services"):
+        page.services.append(backup_file_picker)
+    else:
+        page.overlay.append(backup_file_picker)
 
     def navigate(content, is_home=False):
         main_view.controls = [ft.Row([content], alignment=ft.MainAxisAlignment.CENTER)]
@@ -394,14 +398,18 @@ def main(page: ft.Page):
         )
 
     def create_btn(text, on_click, bgcolor="#2563EB", color="white"):
-        def safe_click(e):
+        async def safe_click(e):
             """
             يلتقط أي خطأ غير متوقع يحدث عند الضغط على أي زر تنقّل في التطبيق
             ويعرضه في رسالة واضحة بدل أن يتسبب في إغلاق التطبيق فجأة (شاشة
             بيضاء تختفي)، وهذا يسهّل معرفة سبب أي عطل مستقبلي فورًا.
+            يدعم أيضًا دوال on_click غير المتزامنة (async)، وهو أمر ضروري
+            لعمل FilePicker في الإصدارات الحديثة من Flet.
             """
             try:
-                on_click(e)
+                result = on_click(e)
+                if inspect.isawaitable(result):
+                    await result
             except Exception as ex:
                 import traceback
                 traceback.print_exc()
@@ -1636,31 +1644,41 @@ def main(page: ft.Page):
                 status.value, status.color = f"خطأ: {ex}", "red"
             page.update()
 
-        def on_export_result(e: ft.FilePickerResultEvent):
-            if not e.path:
+        async def export_backup(_):
+            if not last_backup_path["path"]:
+                status.value, status.color = "أنشئ نسخة احتياطية أولًا بالضغط على الزر الذي يليه.", "red"
+                page.update()
+                return
+            try:
+                result_path = await backup_file_picker.save_file(
+                    file_name=last_backup_path["path"].name,
+                    allowed_extensions=["db"],
+                )
+            except Exception as ex:
+                status.value, status.color = f"خطأ أثناء فتح نافذة الحفظ: {ex}", "red"
+                page.update()
+                return
+            if not result_path:
                 return  # المستخدم ألغى الاختيار
             try:
-                shutil.copy2(last_backup_path["path"], e.path)
+                shutil.copy2(last_backup_path["path"], result_path)
                 status.value, status.color = "✅ تم حفظ النسخة الاحتياطية في المكان الذي اخترته.", "green"
             except Exception as ex:
                 status.value, status.color = f"خطأ أثناء الحفظ: {ex}", "red"
             page.update()
 
-        def export_backup(_):
-            if not last_backup_path["path"]:
-                status.value, status.color = "أنشئ نسخة احتياطية أولًا بالضغط على الزر الذي يليه.", "red"
+        async def import_backup(_):
+            try:
+                files = await backup_file_picker.pick_files(
+                    allow_multiple=False, allowed_extensions=["db"]
+                )
+            except Exception as ex:
+                status.value, status.color = f"خطأ أثناء فتح نافذة الاختيار: {ex}", "red"
                 page.update()
                 return
-            backup_file_picker.on_result = on_export_result
-            backup_file_picker.save_file(
-                file_name=last_backup_path["path"].name,
-                allowed_extensions=["db"],
-            )
-
-        def on_restore_result(e: ft.FilePickerResultEvent):
-            if not e.files:
+            if not files:
                 return  # المستخدم ألغى الاختيار
-            picked = e.files[0]
+            picked = files[0]
             if not picked.path:
                 status.value, status.color = "تعذّر الوصول لمسار الملف المختار على هذا الجهاز.", "red"
                 page.update()
@@ -1687,10 +1705,6 @@ def main(page: ft.Page):
                 "سيُحفظ نسخة أمان من البيانات الحالية تلقائيًا قبل الاستبدال. متابعة؟",
                 do_restore,
             )
-
-        def import_backup(_):
-            backup_file_picker.on_result = on_restore_result
-            backup_file_picker.pick_files(allow_multiple=False, allowed_extensions=["db"])
 
         content = ft.Container(
             width=responsive_width(), padding=20,
