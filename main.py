@@ -1772,6 +1772,6 @@ def main(page: ft.Page):
 
 if __name__ == "__main__":
     if hasattr(ft, "run"):
-        ft.run(target=main)
+        ft.run(main)
     else:
         ft.app(target=main)
