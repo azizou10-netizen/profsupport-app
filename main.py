@@ -1,4 +1,9 @@
 import flet as ft
+# توافق مع الإصدارين: في Flet 1.0 أصبح ft.dropdown.Option هو ft.DropdownOption
+# مباشرة (أُزيلت وحدة ft.dropdown الفرعية)، بينما في الإصدارات الأقدم لا يزال
+# ft.dropdown.Option هو الاسم الصحيح. هذا المتغير يستخدم الاسم الصحيح تلقائيًا
+# مهما كان إصدار Flet المثبَّت، دون الحاجة لتغيير كل استخدام في الكود يدويًا.
+DropdownOption = getattr(ft, "DropdownOption", None) or ft.dropdown.Option
 import sqlite3
 import json
 import os
@@ -349,23 +354,23 @@ def main(page: ft.Page):
 
     def get_study_levels():
         return [
-            ft.dropdown.Option("سنة أولى متوسط"),
-            ft.dropdown.Option("سنة ثانية متوسط"),
-            ft.dropdown.Option("سنة ثالثة متوسط"),
-            ft.dropdown.Option("سنة رابعة متوسط"),
-            ft.dropdown.Option("سنة أولى ثانوي"),
-            ft.dropdown.Option("سنة ثانية ثانوي"),
-            ft.dropdown.Option("سنة ثالثة ثانوي"),
+            DropdownOption("سنة أولى متوسط"),
+            DropdownOption("سنة ثانية متوسط"),
+            DropdownOption("سنة ثالثة متوسط"),
+            DropdownOption("سنة رابعة متوسط"),
+            DropdownOption("سنة أولى ثانوي"),
+            DropdownOption("سنة ثانية ثانوي"),
+            DropdownOption("سنة ثالثة ثانوي"),
         ]
 
     def get_subjects_list():
         return [
-            ft.dropdown.Option("الرياضيات"),
-            ft.dropdown.Option("الفيزياء"),
-            ft.dropdown.Option("اللغة العربية"),
-            ft.dropdown.Option("اللغة الفرنسية"),
-            ft.dropdown.Option("اللغة الإنجليزية"),
-            ft.dropdown.Option("علوم الطبيعة والحياة"),
+            DropdownOption("الرياضيات"),
+            DropdownOption("الفيزياء"),
+            DropdownOption("اللغة العربية"),
+            DropdownOption("اللغة الفرنسية"),
+            DropdownOption("اللغة الإنجليزية"),
+            DropdownOption("علوم الطبيعة والحياة"),
         ]
 
     def group_options():
@@ -375,7 +380,7 @@ def main(page: ft.Page):
         rows = cur.fetchall()
         conn.close()
         return [
-            ft.dropdown.Option(
+            DropdownOption(
                 key=str(g[0]),
                 text=f"{g[1]} - {g[2] or ''} ({g[3] or ''})"
             )
@@ -417,7 +422,7 @@ def main(page: ft.Page):
 
         return ft.Container(
             width=responsive_width(),
-            content=ft.ElevatedButton(
+            content=ft.Button(
                 text,
                 on_click=safe_click,
                 style=ft.ButtonStyle(
@@ -428,6 +433,14 @@ def main(page: ft.Page):
         )
 
     def show_dialog(dlg):
+        """
+        يدعم واجهة الحوارات الجديدة في Flet 1.0 (page.show_dialog) مع
+        التراجع تلقائيًا للطريقة القديمة (page.open ثم overlay) في
+        الإصدارات الأقدم، لتفادي أي كسر عند اختلاف إصدار Flet المثبَّت.
+        """
+        if hasattr(page, "show_dialog"):
+            page.show_dialog(dlg)
+            return
         try:
             page.open(dlg)
         except AttributeError:
@@ -437,12 +450,19 @@ def main(page: ft.Page):
             page.update()
 
     def close_dialog(dlg):
-        dlg.open = False
+        if hasattr(page, "pop_dialog"):
+            page.pop_dialog()
+        else:
+            dlg.open = False
         page.update()
 
     def show_error_snack(message):
-        page.snack_bar = ft.SnackBar(content=ft.Text(message), bgcolor="red")
-        page.snack_bar.open = True
+        snack = ft.SnackBar(content=ft.Text(message), bgcolor="red")
+        if hasattr(page, "show_dialog"):
+            page.show_dialog(snack)
+        else:
+            page.snack_bar = snack
+            page.snack_bar.open = True
         page.update()
 
     def confirm_delete(message, on_confirm):
@@ -546,8 +566,8 @@ def main(page: ft.Page):
                     content=ft.Column([
                         ft.Text(f"{name} - {subj or ''} ({lvl or ''})\n{money(price)} {APP_SETTINGS.get('currency','دج')}"),
                         ft.Row([
-                            ft.ElevatedButton(t("edit"), bgcolor="#F59E0B", color="white", expand=True, on_click=lambda e, x=gid: edit_group_screen(x)),
-                            ft.ElevatedButton(t("delete"), bgcolor="#DC2626", color="white", expand=True, on_click=lambda e, x=gid: delete_group(x)),
+                            ft.Button(t("edit"), bgcolor="#F59E0B", color="white", expand=True, on_click=lambda e, x=gid: edit_group_screen(x)),
+                            ft.Button(t("delete"), bgcolor="#DC2626", color="white", expand=True, on_click=lambda e, x=gid: delete_group(x)),
                         ]),
                     ], spacing=6)
                 )
@@ -693,8 +713,8 @@ def main(page: ft.Page):
                             content=ft.Column([
                                 ft.Text(f"{sname}\n{slvl or ''} — [{grp_str}]"),
                                 ft.Row([
-                                    ft.ElevatedButton(t("edit"), bgcolor="#F59E0B", color="white", expand=True, on_click=lambda e, x=sid: edit_student_screen(x)),
-                                    ft.ElevatedButton(t("delete"), bgcolor="#DC2626", color="white", expand=True, on_click=lambda e, x=sid: delete_student(x)),
+                                    ft.Button(t("edit"), bgcolor="#F59E0B", color="white", expand=True, on_click=lambda e, x=sid: edit_student_screen(x)),
+                                    ft.Button(t("delete"), bgcolor="#DC2626", color="white", expand=True, on_click=lambda e, x=sid: delete_student(x)),
                                 ]),
                             ], spacing=6)
                         )
@@ -790,6 +810,9 @@ def main(page: ft.Page):
         )
 
         def open_calendar(_):
+            if hasattr(page, "show_dialog"):
+                page.show_dialog(date_picker)
+                return
             try:
                 page.open(date_picker)
             except AttributeError:
@@ -853,6 +876,15 @@ def main(page: ft.Page):
         def status_emoji(status_value):
             return STATUS_ICONS.get(status_value, "")
 
+        def left_border(color, width=6):
+            """
+            يدعم كلا الشكلين: ft.Border/ft.BorderSide (Flet 1.0 فما فوق)
+            وft.border.Border/ft.border.BorderSide (الإصدارات الأقدم).
+            """
+            if hasattr(ft, "Border") and hasattr(ft, "BorderSide"):
+                return ft.Border(left=ft.BorderSide(width=width, color=color))
+            return ft.border.Border(left=ft.border.BorderSide(width, color))
+
         def create_student_row(sid, sname, initial_status="present"):
             current_status = {"value": initial_status}
 
@@ -860,7 +892,7 @@ def main(page: ft.Page):
 
             row_container = ft.Container(
                 bgcolor=status_bg_color(initial_status),
-                border=ft.border.Border(left=ft.border.BorderSide(6, status_border_color(initial_status))),
+                border=left_border(status_border_color(initial_status)),
                 border_radius=10, padding=10,
             )
 
@@ -868,7 +900,7 @@ def main(page: ft.Page):
                 """يطبّق الحالة الجديدة (حاضر/غائب) على كل عناصر الصف."""
                 current_status["value"] = new_status
                 row_container.bgcolor = status_bg_color(new_status)
-                row_container.border = ft.border.Border(left=ft.border.BorderSide(6, status_border_color(new_status)))
+                row_container.border = left_border(status_border_color(new_status))
                 name_text.value = f"{status_emoji(new_status)} {sname}"
                 for key, btn in status_buttons.items():
                     btn.style = ft.ButtonStyle(
@@ -883,8 +915,8 @@ def main(page: ft.Page):
                 return current_status["value"]
 
             status_buttons = {
-                "present": ft.ElevatedButton("✅ حاضر", on_click=lambda e: set_status("present"), expand=True),
-                "absent": ft.ElevatedButton("❌ غائب", on_click=lambda e: set_status("absent"), expand=True),
+                "present": ft.Button("✅ حاضر", on_click=lambda e: set_status("present"), expand=True),
+                "absent": ft.Button("❌ غائب", on_click=lambda e: set_status("absent"), expand=True),
             }
             # تلوين أولي للأزرار حسب الحالة الحالية
             for key, btn in status_buttons.items():
@@ -984,7 +1016,7 @@ def main(page: ft.Page):
 
         group_dd.on_change = load_students
         
-        refresh_btn = ft.ElevatedButton(
+        refresh_btn = ft.Button(
             "🔄", 
             on_click=load_students, 
             width=60, 
@@ -1041,7 +1073,7 @@ def main(page: ft.Page):
             )
             show_dialog(dlg)
 
-        history_btn = ft.ElevatedButton(
+        history_btn = ft.Button(
             "📜 سجل الأيام السابقة", bgcolor="#7C3AED", color="white",
             on_click=open_attendance_history,
         )
@@ -1054,11 +1086,11 @@ def main(page: ft.Page):
                 page.update()
             return apply
 
-        mark_all_present_btn = ft.ElevatedButton(
+        mark_all_present_btn = ft.Button(
             "✅ تحديد الكل حاضر", bgcolor="#16A34A", color="white", expand=True,
             on_click=mark_all("present"),
         )
-        mark_all_absent_btn = ft.ElevatedButton(
+        mark_all_absent_btn = ft.Button(
             "❌ تحديد الكل غائب", bgcolor="#DC2626", color="white", expand=True,
             on_click=mark_all("absent"),
         )
@@ -1139,7 +1171,7 @@ def main(page: ft.Page):
             else:
                 perform_save(gid, attendance_date)
 
-        edit_saved_btn = ft.ElevatedButton(
+        edit_saved_btn = ft.Button(
             "✏️ تعديل تسجيل الحضور المحفوظ", bgcolor="#F59E0B", color="white",
             on_click=load_students,
             tooltip="يعيد تحميل آخر نسخة محفوظة لهذا اليوم من قاعدة البيانات، متجاهلاً أي تعديلات لم تُحفظ بعد",
@@ -1150,7 +1182,7 @@ def main(page: ft.Page):
             content=ft.Column([
                 ft.Text(t("attendance"), size=22, weight=ft.FontWeight.BOLD, color="#1D4ED8"),
                 ft.Row([group_dd, refresh_btn]),
-                ft.Row([date_field, ft.ElevatedButton("📅", on_click=open_calendar, width=60)]),
+                ft.Row([date_field, ft.Button("📅", on_click=open_calendar, width=60)]),
                 ft.Row([
                     ft.TextButton("اليوم", on_click=set_date_today),
                     ft.TextButton("🕓 آخر تسجيل", on_click=set_date_last_record),
@@ -1329,7 +1361,7 @@ def main(page: ft.Page):
                         padding=10, bgcolor="white", border_radius=10,
                         content=ft.Column([
                             ft.Text(f"{sname}\nدَين مستحق: {money(debt_amount)} {APP_SETTINGS.get('currency','دج')}"),
-                            ft.ElevatedButton(
+                            ft.Button(
                                 "✅ تسوية الدَّين", bgcolor="#16A34A", color="white", expand=True,
                                 on_click=lambda e, x=sid, n=sname, d=debt_amount, b=breakdown: settle_debt(x, n, d, b),
                             ),
@@ -1346,7 +1378,7 @@ def main(page: ft.Page):
 
         new_pay_student_dd = ft.Dropdown(
             label="التلميذ", expand=True,
-            options=[ft.dropdown.Option(key=str(sid), text=sname) for sid, sname in all_students]
+            options=[DropdownOption(key=str(sid), text=sname) for sid, sname in all_students]
         )
         new_pay_group_dd = ft.Dropdown(label="المجموعة", expand=True, options=[])
         new_pay_amount = ft.TextField(label="المبلغ المدفوع", expand=True, keyboard_type=ft.KeyboardType.NUMBER)
@@ -1364,7 +1396,7 @@ def main(page: ft.Page):
                     (sid,)
                 ).fetchall()
                 conn4.close()
-                new_pay_group_dd.options = [ft.dropdown.Option(key=str(gid), text=gname) for gid, gname in grps]
+                new_pay_group_dd.options = [DropdownOption(key=str(gid), text=gname) for gid, gname in grps]
             page.update()
 
         new_pay_student_dd.on_change = on_pay_student_change
@@ -1602,7 +1634,7 @@ def main(page: ft.Page):
         lang_dd = ft.Dropdown(
             label=t("lang_setting"), expand=True,
             value=APP_SETTINGS.get("lang", "ar"),
-            options=[ft.dropdown.Option("ar", "العربية")]
+            options=[DropdownOption("ar", "العربية")]
         )
         status = ft.Text("", weight=ft.FontWeight.BOLD)
 
