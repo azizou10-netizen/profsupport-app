@@ -9,6 +9,7 @@ import json
 import os
 import shutil
 import inspect
+import asyncio
 from pathlib import Path
 from datetime import datetime, date, timedelta
 
@@ -95,6 +96,8 @@ TRANSLATIONS = {
 STATUS_PRESENT = "حاضر"
 STATUS_PRESENT_UNPAID = "حاضر ولم يدفع"  # قيمة قديمة، تُقرأ فقط لتوافق البيانات السابقة
 STATUS_ABSENT = "غائب"
+
+DEFAULT_GROUP_PRICE = "2000"  # السعر الافتراضي للمجموعة الجديدة (دج)
 
 SESSIONS_PER_PACKAGE = 4  # عدد الحصص في كل "باقة" دفع (حسب طلب الأستاذ)
 
@@ -217,7 +220,7 @@ def load_settings():
     defaults = {
         "teacher_name": "",
         "center_name": "",
-        "default_amount": "500",
+        "default_amount": DEFAULT_GROUP_PRICE,
         "currency": "دج",
         "lang": "ar",
     }
@@ -305,7 +308,10 @@ def main(page: ft.Page):
     main_view = ft.View(
         controls=[],
         bgcolor="#F8FAFC",
-        scroll=ft.ScrollMode.AUTO
+        scroll=ft.ScrollMode.AUTO,
+        # can_pop=False يجعل زر/إيماءة الرجوع في الهاتف تصل إلى on_confirm_pop
+        # بدل أن تُغلق التطبيق مباشرة (الأسلوب الرسمي في آخر إصدارات Flet).
+        can_pop=False,
     )
     page.views.append(main_view)
 
@@ -320,37 +326,53 @@ def main(page: ft.Page):
     else:
         page.overlay.append(backup_file_picker)
 
-    def navigate(content, is_home=False):
+    # الشاشة التي يرجع إليها زر الرجوع من الشاشة الحالية (None = الرئيسية)
+    nav_state = {"back": None}
+
+    def navigate(content, is_home=False, back=None):
+        nav_state["back"] = None if is_home else (back or go_home)
         main_view.controls = [ft.Row([content], alignment=ft.MainAxisAlignment.CENTER)]
         page.update()
-
-    # ملاحظة: تم إلغاء ربط زر/إيماءة الرجوع في أندرويد (page.on_view_pop) بناءً
-    # على طلب صريح، لأنه لم يكن يعمل بشكل سليم على الجهاز. التنقّل للخلف الآن
-    # يتم فقط عبر الأزرار الصريحة داخل التطبيق (مثل "🏠 العودة للرئيسية").
 
     def go_home(_=None):
         show_main_view()
 
-    def close_app(_=None):
-        """يغلق التطبيق نهائيًا بعد تأكيد المستخدم (متوافق مع إصدارات Flet المختلفة)."""
-        def do_close():
-            for attempt in (
-                lambda: page.window.close(),
-                lambda: page.window_close(),
-                lambda: page.window_destroy(),
-            ):
-                try:
-                    attempt()
-                    return
-                except Exception:
-                    continue
-            try:
-                import os
-                os._exit(0)
-            except Exception:
-                pass
+    async def exit_app(_=None):
+        """خروج مباشر من التطبيق دون أي نافذة تأكيد."""
+        try:
+            r = page.window.destroy()
+            if inspect.isawaitable(r):
+                await r
+        except Exception:
+            pass
+        # على الهاتف قد لا تُغلق نافذة Flet بهذه الطريقة، لذا نُنهي العملية
+        # بعد لحظة قصيرة لضمان الخروج الفعلي (قاعدة البيانات تُحفظ عند كل عملية).
+        await asyncio.sleep(0.2)
+        os._exit(0)
 
-        confirm_close_app("هل أنت متأكد من إغلاق البرنامج؟", do_close)
+    async def handle_system_back(e):
+        """
+        يُستدعى عند ضغط زر/إيماءة الرجوع في الهاتف (Flet الحديث: View.on_confirm_pop).
+        - في أي شاشة فرعية: يرجع للشاشة السابقة.
+        - في الشاشة الرئيسية: يسأل عن الخروج من التطبيق.
+        """
+        # نُبقي الـ View الوحيد في مكانه (لا نسمح لنظام الملاحة بإغلاقه)
+        try:
+            r = main_view.confirm_pop(False)
+            if inspect.isawaitable(r):
+                await r
+        except Exception:
+            pass
+
+        back = nav_state["back"]
+        if back is not None:
+            r = back()
+            if inspect.isawaitable(r):
+                await r
+        else:
+            confirm_close_app("هل تريد الخروج من التطبيق؟", lambda: page.run_task(exit_app))
+
+    main_view.on_confirm_pop = handle_system_back
 
     def get_study_levels():
         return [
@@ -504,7 +526,7 @@ def main(page: ft.Page):
         name = ft.TextField(label="اسم المجموعة", expand=True)
         subject = ft.Dropdown(label=t("subject"), expand=True, options=get_subjects_list())
         level = ft.Dropdown(label=t("level"), expand=True, options=get_study_levels())
-        price = ft.TextField(label=t("price"), expand=True, keyboard_type=ft.KeyboardType.NUMBER, value=APP_SETTINGS.get("default_amount", "500"))
+        price = ft.TextField(label=t("price"), expand=True, keyboard_type=ft.KeyboardType.NUMBER, value=DEFAULT_GROUP_PRICE)
         status = ft.Text("", weight=ft.FontWeight.BOLD)
 
         def save_group(_):
@@ -581,7 +603,7 @@ def main(page: ft.Page):
                 create_btn(t("back"), open_groups_screen, "#475569"),
             ], spacing=10)
         )
-        navigate(content)
+        navigate(content, back=open_groups_screen)
 
     def edit_group_screen(group_id):
         conn = get_db_connection()
@@ -616,7 +638,7 @@ def main(page: ft.Page):
                 create_btn(t("back"), open_groups_list, "#475569"),
             ], spacing=10)
         )
-        navigate(content)
+        navigate(content, back=open_groups_list)
 
     # -------------------- التلاميذ --------------------
     def open_students_screen(_=None):
@@ -733,7 +755,7 @@ def main(page: ft.Page):
                 create_btn(t("back"), open_students_screen, "#475569"),
             ], spacing=10)
         )
-        navigate(content)
+        navigate(content, back=open_students_screen)
 
     def edit_student_screen(student_id):
         conn = get_db_connection()
@@ -783,7 +805,7 @@ def main(page: ft.Page):
                 create_btn(t("back"), open_students_list, "#475569"),
             ], spacing=10)
         )
-        navigate(content)
+        navigate(content, back=open_students_list)
 
     # -------------------- تسجيل الحضور --------------------
     def open_attendance_screen(_=None):
@@ -1618,13 +1640,13 @@ def main(page: ft.Page):
                 create_btn(t("back"), open_reports_screen, "#475569"),
             ], spacing=10)
         )
-        navigate(content)
+        navigate(content, back=open_reports_screen)
 
     # -------------------- الإعدادات --------------------
     def open_settings_screen(_=None):
         teacher = ft.TextField(label=t("teacher"), expand=True, value=APP_SETTINGS.get("teacher_name", ""))
         center = ft.TextField(label="اسم المركز / النشاط", expand=True, value=APP_SETTINGS.get("center_name", ""))
-        default_amount = ft.TextField(label="المبلغ الافتراضي", expand=True, keyboard_type=ft.KeyboardType.NUMBER, value=APP_SETTINGS.get("default_amount", "500"))
+        default_amount = ft.TextField(label="المبلغ الافتراضي", expand=True, keyboard_type=ft.KeyboardType.NUMBER, value=APP_SETTINGS.get("default_amount", DEFAULT_GROUP_PRICE))
         currency_field = ft.TextField(label=t("currency"), expand=True, value=APP_SETTINGS.get("currency", "دج"))
         
         # ملاحظة: خيار الفرنسية أُزيل مؤقتًا لأن قاموس TRANSLATIONS
@@ -1642,7 +1664,7 @@ def main(page: ft.Page):
             values = {
                 "teacher_name": teacher.value.strip(),
                 "center_name": center.value.strip(),
-                "default_amount": default_amount.value.strip() or "500",
+                "default_amount": default_amount.value.strip() or DEFAULT_GROUP_PRICE,
                 "currency": currency_field.value.strip() or "دج",
                 "theme": "light",
                 "lang": lang_dd.value or "ar",
@@ -1780,7 +1802,7 @@ def main(page: ft.Page):
                 create_btn(f"💰 {t('payments')}", open_payments_screen, "#16A34A"),
                 create_btn(f"📊 {t('reports')}", open_reports_screen, "#7C3AED"),
                 create_btn(f"⚙️ {t('settings')}", open_settings_screen, "#475569"),
-                create_btn("🔴 إغلاق البرنامج", close_app, "#991B1B"),
+                create_btn("🚪 خروج من التطبيق", exit_app, "#991B1B"),
             ], spacing=12, horizontal_alignment=ft.CrossAxisAlignment.CENTER)
         )
         navigate(content, is_home=True)
