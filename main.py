@@ -337,18 +337,40 @@ def main(page: ft.Page):
     def go_home(_=None):
         show_main_view()
 
-    async def exit_app(_=None):
-        """خروج مباشر من التطبيق دون أي نافذة تأكيد."""
+    def _hard_exit():
+        """إنهاء العملية فورًا (يغلق التطبيق نهائيًا على أندرويد والحاسوب)."""
         try:
+            os._exit(0)
+        except Exception:
+            pass
+        try:
+            import signal
+            os.kill(os.getpid(), signal.SIGKILL)
+        except Exception:
+            pass
+
+    async def exit_app(_=None):
+        """خروج فوري من التطبيق دون أي نافذة تأكيد."""
+        # شبكة أمان مستقلة: تُنهي العملية بعد ثانية مهما حدث،
+        # حتى لو تعلّقت أوامر إغلاق النافذة (تنتظر ردًا لا يصل على الهاتف).
+        try:
+            import threading
+            t = threading.Timer(1.0, _hard_exit)
+            t.daemon = True
+            t.start()
+        except Exception:
+            pass
+
+        async def _close_window():
             r = page.window.destroy()
             if inspect.isawaitable(r):
                 await r
-        except Exception:
+
+        try:
+            await asyncio.wait_for(_close_window(), timeout=0.4)
+        except BaseException:
             pass
-        # على الهاتف قد لا تُغلق نافذة Flet بهذه الطريقة، لذا نُنهي العملية
-        # بعد لحظة قصيرة لضمان الخروج الفعلي (قاعدة البيانات تُحفظ عند كل عملية).
-        await asyncio.sleep(0.2)
-        os._exit(0)
+        _hard_exit()
 
     async def handle_system_back(e):
         """
